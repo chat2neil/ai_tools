@@ -8,6 +8,17 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_core.prompts.chat import SystemMessagePromptTemplate
 
+# ===============================================================
+# Pinecone Question-Answering System
+# This script does a semantic search of a named Pinecone index
+# to retrieve relevant documents based on a user's question.
+# The retrieved documents are then used to generate a response
+# using a language model.
+# 
+# You can load data into the Pinecone index using the
+# `pdf_to_pinecone.py` script.
+# ===============================================================
+
 load_dotenv()
 
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
@@ -39,5 +50,3 @@ while(question != "exit"):
     messages = prompt.format_messages(question=question, context=docs_content)
     response = llm.invoke(messages)
     print("Answer: ", response.content)
-
-

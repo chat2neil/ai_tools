@@ -10,6 +10,11 @@ from uuid import uuid4
 load_dotenv()
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 
+# ===============================================================
+# Read a PDF file and load its content into a Pinecone index
+# for semantic search.
+# ===============================================================
+
 PDF_FILE = "./data/Graph-Powered_Machine_Learning.pdf"
 PINECONE_INDEX_NAME = os.path.splitext(os.path.basename(PDF_FILE))[0].lower().replace("_", "-").replace(" ", "-")
 
