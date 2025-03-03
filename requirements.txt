@@ -3,3 +3,14 @@ langchain-core
 langchain-community
 langchain-openai
 
+# PDF parsing dependencies...
+unstructured
+pandas
+pdfminer.six
+unstructured_inference
+pdf2image
+pypdf
+
+# Also dependends on the following installed software:
+# https://poppler.freedesktop.org/
+# Poppler is a PDF rendering library based on the xpdf-3.0 code base.
