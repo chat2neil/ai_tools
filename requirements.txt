@@ -2,6 +2,8 @@ langgraph
 langchain-core
 langchain-community
 langchain-openai
+tavily-python
+wikipedia
 
 # PDF parsing dependencies...
 unstructured
