@@ -1,4 +1,4 @@
-# Langchain Tools
+# AI Tools
 
 Simple AI tools for personal productivity.
 
