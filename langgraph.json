@@ -1,7 +1,6 @@
 {
   "dockerfile_lines": [],
   "graphs": {
-    "demo": "./demo.py:graph",
     "research_assistant": "./research_assistant.py:graph"
   },
   "env": "./.env",

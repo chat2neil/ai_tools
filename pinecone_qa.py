@@ -8,6 +8,8 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_core.prompts.chat import SystemMessagePromptTemplate
 
+# todo: migrate to langraph so that I can call it from the langraph UI
+
 # ===============================================================
 # Pinecone Question-Answering System
 # This script does a semantic search of a named Pinecone index
