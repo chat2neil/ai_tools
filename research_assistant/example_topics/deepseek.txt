@@ -1,0 +1,2 @@
+What were the major breakthroughs that Deepseek achieved to significantly lower the cost of creating and running large language models that are comparable to leading models such as Open AI.  Provide a technical breakdown of the improvements, with sufficient explanation for a non-technical audience to understand.
+
