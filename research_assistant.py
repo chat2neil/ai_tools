@@ -32,16 +32,17 @@ class Persona(BaseModel):
     role: str = Field(
         description="Role of the persona in the context of the topic.",
     )
-    key_interests: str = Field(
-        description="Comprehensive bullet list of primary interests, concerns, and motives.",
+    concerns: List[str] = Field(
+        description="Comprehensive list of interests, concerns, and motives.",
     )
 
     @property
     def description(self) -> str:
-        return f"Role: {self.role}\nKey interests: {self.key_interests}\n"
+        concerns_bullets = "\n - ".join(self.concerns)
+        return f"Role: {self.role}\nConcerns: {concerns_bullets}\n"
 
 
-class Perspectives(BaseModel):
+class TopicPerspectives(BaseModel):
     personas: List[Persona] = Field(
         description="List of personas who are primary stakeholders for the topic.",
     )
@@ -49,16 +50,18 @@ class Perspectives(BaseModel):
 
 class GeneratePersonasState(TypedDict):
     topic: str  # Research topic
-    human_feedback_on_personas: str  # Human feedback
+    human_feedback: str  # Human feedback
     personas: List[Persona]  # Personas to consider for this topic
 
 
-class InterviewState(MessagesState):
-    max_num_turns: int  # Number turns of conversation
+class GatherInformationState(TypedDict):
     context: Annotated[list, operator.add]  # Source docs
-    analyst: Persona  # Analyst asking questions
-    interview: str  # Interview transcript
-    sections: list  # Final key we duplicate in outer state for Send() API
+    persona_role: str        # The persona with an interest
+    topic: str          # The topic being researched
+    concern: str        # The specific concern we are researching
+    question: str       # The question we are asking
+    information: str    # The information gathered
+    sections: list      # Final key we duplicate in outer state for Send() API
 
 
 class SearchQuery(BaseModel):
@@ -67,8 +70,8 @@ class SearchQuery(BaseModel):
 
 class ResearchGraphState(TypedDict):
     topic: str  # Research topic
-    human_feedback_on_personas: str  # Human feedback
-    personas: List[Persona]  # Analyst asking questions
+    human_feedback: str  # Human feedback
+    personas: List[Persona]  # persona asking questions
     sections: Annotated[list, operator.add]  # Send() API key
     introduction: str  # Introduction for the final report
     content: str  # Content for the final report
@@ -83,22 +86,17 @@ def create_personas(state: GeneratePersonasState):
     """Create personas who are would primarily be interested in the topic"""
 
     topic = state["topic"]
-    max_personas = 3
-    human_feedback_on_personas = state.get("human_feedback_on_personas", "")
-
-    print(f"Creating personas for the topic: {topic}")
-    print(f"Human feedback on personas: {human_feedback_on_personas}")
+    human_feedback = state.get("human_feedback", "")
 
     create_personas_prompt = PromptTemplate.from_file(
         "./research_assistant/prompts/create_personas.txt"
     )
     system_message = create_personas_prompt.format(
         topic=topic,
-        human_feedback_on_personas=human_feedback_on_personas,
-        max_personas=max_personas,
+        human_feedback=human_feedback
     )
 
-    personas = llm.with_structured_output(Perspectives).invoke(
+    personas = llm.with_structured_output(TopicPerspectives).invoke(
         [SystemMessage(content=system_message)]
         + [HumanMessage(content="Generate the set of personas.")]
     )
@@ -106,35 +104,57 @@ def create_personas(state: GeneratePersonasState):
     return {"personas": personas.personas}
 
 
-def human_feedback(state: GeneratePersonasState):
+def get_human_feedback(state: GeneratePersonasState):
     """No-op node that should be interrupted on"""
     pass
 
+def start_gathering_information(state: ResearchGraphState):
+    """Conditional edge to initiate a series of parallel information gathering processes
+     via Send() API or return to create_personas"""
+
+    # Check if human feedback
+    human_feedback = state.get("human_feedback", "approve")
+    
+    if human_feedback.lower() != "approve":
+        # Return to create_personas
+        return "create_personas"
+
+    # Otherwise kick off informations in parallel via Send() API
+    else:
+        topic = state["topic"]
+        return [
+            Send(
+                "gather_information",
+                {
+                    "persona_role": persona.role,
+                    "topic": topic,
+                    "concern": concern,
+                },
+            )
+            for persona in state["personas"] for concern in persona.concerns
+        ]
 
 # %%
-### Generate analyst question
+### Gather information from the perspective of each persona
 
-def generate_question(state: InterviewState):
-    """Node to generate a question"""
+def generate_question(state: GatherInformationState):
+    """Generate a question to gather information about a particular persona and one of their concerns"""
 
+    topic = state["topic"]
+    persona_role = state["persona_role"]
+    concern = state["concern"]
+    
     question_instructions = PromptTemplate.from_file(
-        "./research_assistant/prompts/question_instructions.txt"
+        "./research_assistant/prompts/generate_question.txt"
     )
+    system_message = question_instructions.format(topic=topic, persona_role=persona_role, concern=concern)
+    question = llm.invoke([SystemMessage(content=system_message), HumanMessage("Compose the question.")])
 
-    # Get state
-    analyst = state["analyst"]
-    messages = state["messages"]
-
-    # Generate question
-    system_message = question_instructions.format(goals=analyst.description)
-    question = llm.invoke([SystemMessage(content=system_message)] + messages)
-
-    # Write messages to state
-    return {"messages": [question]}
+    return {"question": question.content}
 
 
 # Search query writing
-def search_web(state: InterviewState):
+def search_web(state: GatherInformationState):
     """Retrieve docs from web search"""
 
     search_instructions = PromptTemplate.from_file(
@@ -164,7 +184,7 @@ def search_web(state: InterviewState):
     return {"context": [formatted_search_docs]}
 
 
-def search_wikipedia(state: InterviewState):
+def search_wikipedia(state: GatherInformationState):
     """Retrieve docs from wikipedia"""
 
     search_instructions = PromptTemplate.from_file(
@@ -194,7 +214,7 @@ def search_wikipedia(state: InterviewState):
 
 
 # Generate expert answer
-def generate_answer(state: InterviewState):
+def generate_answer(state: GatherInformationState):
     """Node to answer a question"""
 
     answer_instructions = PromptTemplate.from_file(
@@ -202,13 +222,13 @@ def generate_answer(state: InterviewState):
     )
 
     # Get state
-    analyst = state["analyst"]
+    persona = state["persona"]
     messages = state["messages"]
     context = state["context"]
 
     # Answer question
     system_message = answer_instructions.format(
-        goals=analyst.description, context=context
+        goals=persona.description, context=context
     )
     answer = llm.invoke([SystemMessage(content=system_message)] + messages)
 
@@ -219,20 +239,20 @@ def generate_answer(state: InterviewState):
     return {"messages": [answer]}
 
 
-def save_interview(state: InterviewState):
-    """Save interviews"""
+def save_information(state: GatherInformationState):
+    """Save information"""
 
     # Get messages
     messages = state["messages"]
 
-    # Convert interview to a string
-    interview = get_buffer_string(messages)
+    # Convert information to a string
+    information = get_buffer_string(messages)
 
-    # Save to interviews key
-    return {"interview": interview}
+    # Save to informations key
+    return {"information": information}
 
 
-def route_messages(state: InterviewState, name: str = "expert"):
+def ask_another_question(state: GatherInformationState, name: str = "expert"):
     """Route between question and answer"""
 
     # Get messages
@@ -246,19 +266,22 @@ def route_messages(state: InterviewState, name: str = "expert"):
 
     # End if expert has answered more than the max turns
     if num_responses >= max_num_turns:
-        return "save_interview"
+        return "save_information"
 
     # This router is run after each question - answer pair
     # Get the last question asked to check if it signals the end of discussion
     last_question = messages[-2]
 
     if "Thank you so much for your help" in last_question.content:
-        return "save_interview"
-    return "ask_question"
+        return "save_information"
+    
+    return "generate_question"
 
 
-# Write a summary (section of the final report) of the interview
-def write_section(state: InterviewState):
+# %%
+### Write report
+
+def write_section(state: GatherInformationState):
     """Node to write a section"""
 
     section_writer_instructions = PromptTemplate.from_file(
@@ -266,12 +289,12 @@ def write_section(state: InterviewState):
     )
 
     # Get state
-    interview = state["interview"]
+    information = state["information"]
     context = state["context"]
-    analyst = state["analyst"]
+    persona = state["persona"]
 
-    # Write section using either the gathered source docs from interview (context) or the interview itself (interview)
-    system_message = section_writer_instructions.format(focus=analyst.description)
+    # Write section using either the gathered source docs from information (context) or the information itself (information)
+    system_message = section_writer_instructions.format(focus=persona.description)
     section = llm.invoke(
         [SystemMessage(content=system_message)]
         + [HumanMessage(content=f"Use this source to write your section: {context}")]
@@ -279,38 +302,6 @@ def write_section(state: InterviewState):
 
     # Append it to state
     return {"sections": [section.content]}
-
-
-def initiate_information_gathering(state: ResearchGraphState):
-    """Conditional edge to initiate a series of parallel information gathering processes
-     via Send() API or return to create_personas"""
-
-    # Check if human feedback
-    human_feedback_on_personas = state.get("human_feedback_on_personas", "approve")
-    
-    if human_feedback_on_personas.lower() != "approve":
-        # Return to create_personas
-        return "create_personas"
-
-    # Otherwise kick off interviews in parallel via Send() API
-    else:
-        return END
-    # else:
-    #     topic = state["topic"]
-    #     return [
-    #         Send(
-    #             "gather_information",
-    #             {
-    #                 "analyst": analyst,
-    #                 "messages": [
-    #                     HumanMessage(
-    #                         content=f"So you said you were writing an article on {topic}?"
-    #                     )
-    #                 ],
-    #             },
-    #         )
-    #         for analyst in state["personas"]
-    #     ]
 
 
 def write_report(state: ResearchGraphState):
@@ -338,11 +329,6 @@ def write_report(state: ResearchGraphState):
 
 
 # Write the introduction or conclusion
-intro_conclusion_instructions = PromptTemplate.from_file(
-    "./research_assistant/prompts/intro_conclusion_instructions.txt"
-)
-
-
 def write_introduction(state: ResearchGraphState):
     """Node to write the introduction"""
 
@@ -418,33 +404,33 @@ def finalize_report(state: ResearchGraphState):
 
 # %%
 # Research information gathering stage
-gathering_process_builder = StateGraph(InterviewState)
-gathering_process_builder.add_node("ask_question", generate_question)
-gathering_process_builder.add_node("search_web", search_web)
-gathering_process_builder.add_node("search_wikipedia", search_wikipedia)
-gathering_process_builder.add_node("answer_question", generate_answer)
-gathering_process_builder.add_node("save_interview", save_interview)
-gathering_process_builder.add_node("write_section", write_section)
+gather_info_builder = StateGraph(GatherInformationState)
+gather_info_builder.add_node("generate_question", generate_question)
+# gather_info_builder.add_node("search_web", search_web)
+# gather_info_builder.add_node("search_wikipedia", search_wikipedia)
+# gather_info_builder.add_node("answer_question", generate_answer)
+# gather_info_builder.add_node("save_information", save_information)
+# gather_info_builder.add_node("write_section", write_section)
 
 # Flow
-gathering_process_builder.add_edge(START, "ask_question")
-gathering_process_builder.add_edge("ask_question", "search_web")
-gathering_process_builder.add_edge("ask_question", "search_wikipedia")
-gathering_process_builder.add_edge("search_web", "answer_question")
-gathering_process_builder.add_edge("search_wikipedia", "answer_question")
-gathering_process_builder.add_conditional_edges(
-    "answer_question", route_messages, ["ask_question", "save_interview"]
-)
-gathering_process_builder.add_edge("save_interview", "write_section")
-gathering_process_builder.add_edge("write_section", END)
-
+gather_info_builder.add_edge(START, "generate_question")
+# gather_info_builder.add_edge("generate_question", "search_web")
+# gather_info_builder.add_edge("generate_question", "search_wikipedia")
+# gather_info_builder.add_edge("search_web", "answer_question")
+# gather_info_builder.add_edge("search_wikipedia", "answer_question")
+# gather_info_builder.add_conditional_edges(
+#     "answer_question", ask_another_question, ["generate_question", "save_information"]
+# )
+# gather_info_builder.add_edge("save_information", "write_section")
+# gather_info_builder.add_edge("write_section", END)
+gather_info_builder.add_edge("generate_question", END)
 
 # %%
 # Create graph
 builder = StateGraph(ResearchGraphState)
 builder.add_node("create_personas", create_personas)
-builder.add_node("human_feedback", human_feedback)
-# builder.add_node("gather_information", gathering_process_builder.compile())
+builder.add_node("get_human_feedback", get_human_feedback)
+builder.add_node("gather_information", gather_info_builder.compile())
 # builder.add_node("write_report",write_report)
 # builder.add_node("write_introduction",write_introduction)
 # builder.add_node("write_conclusion",write_conclusion)
@@ -453,9 +439,8 @@ builder.add_node("human_feedback", human_feedback)
 # Create personas and seek feedback from user until approved
 # Then move to information gathering
 builder.add_edge(START, "create_personas")
-builder.add_edge("create_personas", "human_feedback")
-# builder.add_conditional_edges("human_feedback", initiate_information_gathering, ["create_personas", "gather_information"])
-builder.add_conditional_edges("human_feedback", initiate_information_gathering, ["create_personas", END])
+builder.add_edge("create_personas", "get_human_feedback")
+builder.add_conditional_edges("get_human_feedback", start_gathering_information, ["create_personas", "gather_information"])
 
 # After gathering information, write the report
 # builder.add_edge("gather_information", "write_report")
@@ -464,11 +449,10 @@ builder.add_conditional_edges("human_feedback", initiate_information_gathering, 
 # builder.add_edge(["write_conclusion", "write_report", "write_introduction"], "finalize_report")
 # builder.add_edge("finalize_report", END)
 
-builder.add_edge("create_personas", END)
+builder.add_edge("gather_information", END)
 
 # Compile
-graph = builder.compile(interrupt_before=['human_feedback'])
-# graph = builder.compile()
+graph = builder.compile(interrupt_before=['get_human_feedback'])
 
 # %%
 graph
@@ -477,7 +461,7 @@ graph
 # Test the graph
 # state = {
 #     "topic": "Snowflake data lakehouse capabilities",
-#     "human_feedback_on_personas": "make sure a data scientist is included",
+#     "human_feedback": "make sure a data scientist is included",
 #     "personas": [],
 #     "sections": [],
 #     "introduction": "",

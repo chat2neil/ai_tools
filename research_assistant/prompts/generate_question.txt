@@ -1,0 +1,3 @@
+As a {persona_role} researching the topic: {topic}
+
+Compose a clear, precise and concise question about the following specific concern: {concern}
