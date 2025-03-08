@@ -76,11 +76,12 @@ class ResearchGraphState(TypedDict):
 # %%
 ### Nodes and edges
 
-analyst_instructions = PromptTemplate.from_file("./research_assistant/prompts/analyst_instructions.txt")
 
 def create_analysts(state: GenerateAnalystsState):
     
     """ Create analysts """
+    
+    analyst_instructions = PromptTemplate.from_file("./research_assistant/prompts/analyst_instructions.txt")
     
     topic=state['topic']
     max_analysts=state['max_analysts']
@@ -105,11 +106,11 @@ def human_feedback(state: GenerateAnalystsState):
     pass
 
 # Generate analyst question
-question_instructions = PromptTemplate.from_file("./research_assistant/prompts/question_instructions.txt")
-
 def generate_question(state: InterviewState):
 
     """ Node to generate a question """
+    
+    question_instructions = PromptTemplate.from_file("./research_assistant/prompts/question_instructions.txt")
 
     # Get state
     analyst = state["analyst"]
@@ -123,11 +124,11 @@ def generate_question(state: InterviewState):
     return {"messages": [question]}
 
 # Search query writing
-search_instructions = PromptTemplate.from_file("./research_assistant/prompts/search_instructions.txt")
-
 def search_web(state: InterviewState):
     
     """ Retrieve docs from web search """
+    
+    search_instructions = PromptTemplate.from_file("./research_assistant/prompts/search_instructions.txt")
 
     # Search
     tavily_search = TavilySearchResults(max_results=3)
@@ -153,6 +154,8 @@ def search_wikipedia(state: InterviewState):
     
     """ Retrieve docs from wikipedia """
 
+    search_instructions = PromptTemplate.from_file("./research_assistant/prompts/search_instructions.txt")
+
     # Search query
     structured_llm = llm.with_structured_output(SearchQuery)
     search_query = structured_llm.invoke([SystemMessage(content=search_instructions)]+state['messages'])
@@ -172,11 +175,11 @@ def search_wikipedia(state: InterviewState):
     return {"context": [formatted_search_docs]} 
 
 # Generate expert answer
-answer_instructions = PromptTemplate.from_file("./research_assistant/prompts/answer_instructions.txt")
-
 def generate_answer(state: InterviewState):
     
     """ Node to answer a question """
+    
+    answer_instructions = PromptTemplate.from_file("./research_assistant/prompts/answer_instructions.txt")
 
     # Get state
     analyst = state["analyst"]
@@ -233,11 +236,11 @@ def route_messages(state: InterviewState,
     return "ask_question"
 
 # Write a summary (section of the final report) of the interview
-section_writer_instructions = PromptTemplate.from_file("./research_assistant/prompts/section_writer_instructions.txt")
-
 def write_section(state: InterviewState):
 
     """ Node to write a section """
+    
+    section_writer_instructions = PromptTemplate.from_file("./research_assistant/prompts/section_writer_instructions.txt")
 
     # Get state
     interview = state["interview"]
@@ -295,6 +298,8 @@ report_writer_instructions = PromptTemplate.from_file("./research_assistant/prom
 def write_report(state: ResearchGraphState):
 
     """ Node to write the final report body """
+    
+    report_writer_instructions = PromptTemplate.from_file("./research_assistant/prompts/report_writer_instructions.txt")
 
     # Full set of sections
     sections = state["sections"]
@@ -323,7 +328,7 @@ def write_introduction(state: ResearchGraphState):
     formatted_str_sections = "\n\n".join([f"{section}" for section in sections])
     
     # Summarize the sections into a final report
-    
+    intro_conclusion_instructions = PromptTemplate.from_file("./research_assistant/prompts/intro_conclusion_instructions.txt")
     instructions = intro_conclusion_instructions.format(topic=topic, formatted_str_sections=formatted_str_sections)    
     intro = llm.invoke([instructions]+[HumanMessage(content=f"Write the report introduction")]) 
     return {"introduction": intro.content}
@@ -340,7 +345,7 @@ def write_conclusion(state: ResearchGraphState):
     formatted_str_sections = "\n\n".join([f"{section}" for section in sections])
     
     # Summarize the sections into a final report
-    
+    intro_conclusion_instructions = PromptTemplate.from_file("./research_assistant/prompts/intro_conclusion_instructions.txt")
     instructions = intro_conclusion_instructions.format(topic=topic, formatted_str_sections=formatted_str_sections)    
     conclusion = llm.invoke([instructions]+[HumanMessage(content=f"Write the report conclusion")]) 
     return {"conclusion": conclusion.content}
@@ -370,24 +375,24 @@ def finalize_report(state: ResearchGraphState):
 # Create graph
 builder = StateGraph(ResearchGraphState)
 builder.add_node("create_analysts", create_analysts)
-# builder.add_node("human_feedback", human_feedback)
-# builder.add_node("conduct_interview", interview_builder.compile())
-# builder.add_node("write_report",write_report)
-# builder.add_node("write_introduction",write_introduction)
-# builder.add_node("write_conclusion",write_conclusion)
-# builder.add_node("finalize_report",finalize_report)
+builder.add_node("human_feedback", human_feedback)
+builder.add_node("conduct_interview", interview_builder.compile())
+builder.add_node("write_report",write_report)
+builder.add_node("write_introduction",write_introduction)
+builder.add_node("write_conclusion",write_conclusion)
+builder.add_node("finalize_report",finalize_report)
 
 # # Logic
 builder.add_edge(START, "create_analysts")
-# builder.add_edge("create_analysts", "human_feedback")
-# builder.add_conditional_edges("human_feedback", initiate_all_interviews, ["create_analysts", "conduct_interview"])
-# builder.add_edge("conduct_interview", "write_report")
-# builder.add_edge("conduct_interview", "write_introduction")
-# builder.add_edge("conduct_interview", "write_conclusion")
-# builder.add_edge(["write_conclusion", "write_report", "write_introduction"], "finalize_report")
-# builder.add_edge("finalize_report", END)
+builder.add_edge("create_analysts", "human_feedback")
+builder.add_conditional_edges("human_feedback", initiate_all_interviews, ["create_analysts", "conduct_interview"])
+builder.add_edge("conduct_interview", "write_report")
+builder.add_edge("conduct_interview", "write_introduction")
+builder.add_edge("conduct_interview", "write_conclusion")
+builder.add_edge(["write_conclusion", "write_report", "write_introduction"], "finalize_report")
+builder.add_edge("finalize_report", END)
 
-builder.add_edge("create_analysts", END)
+# builder.add_edge("create_analysts", END)
 
 # Compile
 # graph = builder.compile(interrupt_before=['human_feedback'])
