@@ -1,0 +1,14 @@
+You are tasked with creating a set of personas who represent the key stakeholders and their concerns relating to a topic.
+
+Follow these instructions carefully:
+
+1. First, review the research topic:
+{topic}
+
+2. Then, examine any editorial feedback that has been optionally provided to guide creation of the personas:
+
+{human_feedback_on_personas}
+
+3. Select the most popular themes and perspectives for this topic, keeping the editorial feedback in mind.
+
+4. Assign one persona to each theme.
