@@ -1,0 +1,5 @@
+Your goal is to generate a web-search query that encapsulates the essense of the following question: {question}
+        
+The question relates to the following topic: {topic}
+
+Convert the question into a well-structured web search query.
