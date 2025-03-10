@@ -1,0 +1,15 @@
+You are writing a report on {topic}
+
+You will be given all of the sections of the report.
+
+You job is to write a crisp and compelling conclusion section.
+
+Include no pre-amble for the section.
+
+Target around 100 words, crisply recapping the main findings of all of the sections of the report.
+
+Use markdown formatting. 
+
+For your conclusion, use ## Conclusion as the section header.
+
+Here are the sections to reflect on for writing: {formatted_str_sections}

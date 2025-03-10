@@ -1,11 +1,9 @@
-# %%
 import operator
 from pydantic import BaseModel, Field
 from typing import Annotated, List, Literal
 from typing_extensions import TypedDict
 
 from langchain_core.messages import (
-    AIMessage,
     HumanMessage,
     SystemMessage,
     get_buffer_string,
@@ -14,27 +12,20 @@ from langchain_core.prompts import PromptTemplate
 
 from langchain_openai import ChatOpenAI
 
-from langchain_community.document_loaders import WikipediaLoader
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 from langgraph.types import Command, Send
 from langgraph.graph import END, MessagesState, START, StateGraph
 
-# %%
 ### Max extent of search.
-MAX_PERSONAS = 1
-MAX_CONCERNS = 2
-MAX_SEARCH_RESULTS = 3
+MAX_PERSONAS = 3
+MAX_CONCERNS = 3
+MAX_SEARCH_RESULTS = 5
 
-# %%
 ### LLM
-
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
-# %%
 ### Schema
-
-
 class Persona(BaseModel):
     role: str = Field(
         description="Role of the persona in the context of the topic.",
@@ -95,22 +86,19 @@ class ResearchGraphState(TypedDict):
     final_report: str  # Final report
 
 
-# %%
 ### Creating personas, with human feedback
-
 
 def create_personas(state: GeneratePersonasState):
     """Create personas who are would primarily be interested in the topic"""
 
     topic = state["topic"]
     human_feedback = state.get("human_feedback", "")
-    
+
     create_personas_prompt = PromptTemplate.from_file(
         "./research_assistant/prompts/create_personas.txt"
     )
     system_message = create_personas_prompt.format(
-        topic=topic, 
-        human_feedback=human_feedback
+        topic=topic, human_feedback=human_feedback
     )
 
     personas = llm.with_structured_output(TopicPerspectives).invoke(
@@ -145,17 +133,16 @@ def start_gathering_information(state: ResearchGraphState):
             Send(
                 "gather_information",
                 {
-                    "persona": persona, 
+                    "persona": persona,
                     "topic": topic,
                     "concern": persona.concerns[0],
-                    "concern_index": 0
-                 },
+                    "concern_index": 0,
+                },
             )
             for persona in personas
         ]
 
 
-# %%
 ### Gather information from the perspective of each persona
 
 def generate_question(state: GatherInformationSubgraphState):
@@ -188,9 +175,7 @@ def generate_web_search_query(state: GatherInformationSubgraphState):
     search_instructions = PromptTemplate.from_file(
         "./research_assistant/prompts/web_search_query.txt"
     ).format(question=question, topic=topic)
-    query = llm.invoke(
-        [SystemMessage(content=search_instructions)]
-    )
+    query = llm.invoke([SystemMessage(content=search_instructions)])
     query.name = "web_search_query"
 
     return {"messages": [query]}
@@ -201,27 +186,11 @@ def search_web(state: GatherInformationSubgraphState):
 
     query = state["messages"][-1].content
 
-    tavily_search = TavilySearchResults(max_results = MAX_SEARCH_RESULTS)
+    tavily_search = TavilySearchResults(max_results=MAX_SEARCH_RESULTS)
     search_docs = tavily_search.invoke(query)
     formatted_search_docs = "\n\n---\n\n".join(
         [
             f'<Document href="{doc["url"]}"/>\n{doc["content"]}\n</Document>'
-            for doc in search_docs
-        ]
-    )
-
-    return {"search_results": [formatted_search_docs]}
-
-
-def search_wikipedia(state: GatherInformationSubgraphState):
-    """Search wikipedia"""
-
-    query = state["messages"][-1].content
-
-    search_docs = WikipediaLoader(query=query, load_max_docs=2).load()
-    formatted_search_docs = "\n\n---\n\n".join(
-        [
-            f'<Document source="{doc.metadata["source"]}" page="{doc.metadata.get("page", "")}"/>\n{doc.page_content}\n</Document>'
             for doc in search_docs
         ]
     )
@@ -241,7 +210,10 @@ def generate_answer(state: GatherInformationSubgraphState):
         "./research_assistant/prompts/generate_answer.txt"
     )
     system_message = answer_instructions.format(
-        persona_role=persona_role, question=question, topic=topic, search_results=search_results
+        persona_role=persona_role,
+        question=question,
+        topic=topic,
+        search_results=search_results,
     )
     answer = llm.invoke([SystemMessage(content=system_message)])
     answer.name = "answer"
@@ -249,7 +221,9 @@ def generate_answer(state: GatherInformationSubgraphState):
     return {"messages": [answer]}
 
 
-def next_concern(state: GatherInformationSubgraphState) -> Command[Literal["generate_question", "consolidate_answers"]]:
+def next_concern(
+    state: GatherInformationSubgraphState,
+) -> Command[Literal["generate_question", "consolidate_answers"]]:
     """Select the persona's next concern to gather information for"""
 
     persona = state["persona"]
@@ -262,9 +236,9 @@ def next_concern(state: GatherInformationSubgraphState) -> Command[Literal["gene
             update={
                 "concern_index": concern_index,
                 "concern": next_concern,
-                "search_results": []
+                "search_results": [],
             },
-            goto="generate_question"
+            goto="generate_question",
         )
     else:
         return Command(goto="consolidate_answers")
@@ -279,9 +253,10 @@ def consolidate_answers(state: GatherInformationSubgraphState):
 
 
 def write_section(state: GatherInformationSubgraphState):
-    """Node to write a section"""
+    """Write a section of the report that summarises the gathered information for a persona"""
 
     persona = state["persona"]
+    concerns = "\n- ".join(persona.concerns)
     topic = state["topic"]
     all_answers = state["all_answers"]
 
@@ -290,92 +265,61 @@ def write_section(state: GatherInformationSubgraphState):
         "./research_assistant/prompts/write_section.txt"
     )
     system_message = section_writer_instructions.format(
-        persona_role=persona.role, topic=topic, answers=all_answers
+        persona_role=persona.role, topic=topic, concerns=concerns, answers=all_answers
     )
-    section = llm.invoke(
-        [SystemMessage(content=system_message)]
-    )
+    section = llm.invoke([SystemMessage(content=system_message)])
 
     # Append it to state
     return {"sections": [section.content]}
 
 
-# %%
 ### Write final report
 
-
-def write_report(state: ResearchGraphState):
-    """Write the final report body"""
-
-    # Full set of sections
+def combine_sections_into_report_body(state: ResearchGraphState):
+    """Consolidate the sections into a final report body"""
+    
     sections = state["sections"]
-    topic = state["topic"]
-
-    # Concat all sections together
     formatted_str_sections = "\n\n".join([f"{section}" for section in sections])
 
-    # Summarize the sections into a final report
-    report_writer_instructions = PromptTemplate.from_file(
-        "./research_assistant/prompts/report_writer_instructions.txt"
-    )
-    system_message = report_writer_instructions.format(
-        topic=topic, context=formatted_str_sections
-    )
-    report = llm.invoke(
-        [SystemMessage(content=system_message)]
-        + [HumanMessage(content=f"Write a report based upon these memos.")]
-    )
-    return {"content": report.content}
+    return { "content": formatted_str_sections }
 
 
 # Write the introduction or conclusion
 def write_introduction(state: ResearchGraphState):
-    """Node to write the introduction"""
+    """Write the introduction"""
 
-    # Full set of sections
-    sections = state["sections"]
     topic = state["topic"]
-
-    # Concat all sections together
-    formatted_str_sections = "\n\n".join([f"{section}" for section in sections])
-
-    # Summarize the sections into a final report
-    intro_conclusion_instructions = PromptTemplate.from_file(
-        "./research_assistant/prompts/intro_conclusion_instructions.txt"
+    content = state["content"]
+    prompt_template = PromptTemplate.from_file(
+        "./research_assistant/prompts/write_introduction.txt"
     )
-    instructions = intro_conclusion_instructions.format(
-        topic=topic, formatted_str_sections=formatted_str_sections
+    instructions = prompt_template.format(
+        content=content, topic=topic
     )
     intro = llm.invoke(
-        [instructions] + [HumanMessage(content=f"Write the report introduction")]
+        [SystemMessage(content=instructions), HumanMessage(content=f"Write the report introduction")]
     )
     return {"introduction": intro.content}
 
 
 def write_conclusion(state: ResearchGraphState):
-    """Node to write the conclusion"""
+    """Write the conclusion"""
 
-    # Full set of sections
-    sections = state["sections"]
     topic = state["topic"]
-
-    # Concat all sections together
-    formatted_str_sections = "\n\n".join([f"{section}" for section in sections])
-
-    # Summarize the sections into a final report
-    intro_conclusion_instructions = PromptTemplate.from_file(
-        "./research_assistant/prompts/intro_conclusion_instructions.txt"
+    content = state["content"]
+    prompt_template = PromptTemplate.from_file(
+        "./research_assistant/prompts/write_conclusion.txt"
     )
-    instructions = intro_conclusion_instructions.format(
-        topic=topic, formatted_str_sections=formatted_str_sections
+    instructions = prompt_template.format(
+        content=content, topic=topic
     )
     conclusion = llm.invoke(
-        [instructions] + [HumanMessage(content=f"Write the report conclusion")]
+        [SystemMessage(content=instructions), HumanMessage(content=f"Write the report conclusion")]
     )
     return {"conclusion": conclusion.content}
 
 
-def finalize_report(state: ResearchGraphState):
+def combine_header_body_and_conclusion(state: ResearchGraphState):
     """The is the "reduce" step where we gather all the sections, combine them, and reflect on them to write the intro/conclusion"""
 
     # Save full final report
@@ -402,42 +346,32 @@ def finalize_report(state: ResearchGraphState):
     return {"final_report": final_report}
 
 
-# %%
 # Research information gathering stage
-gather_info_builder = StateGraph(GatherInformationSubgraphState)
-gather_info_builder.add_node("generate_question", generate_question)
-gather_info_builder.add_node("generate_web_search_query", generate_web_search_query)
-gather_info_builder.add_node("search_web", search_web)
-gather_info_builder.add_node("search_wikipedia", search_wikipedia)
-gather_info_builder.add_node("generate_answer", generate_answer)
-gather_info_builder.add_node("next_concern", next_concern)
-gather_info_builder.add_node("consolidate_answers", consolidate_answers)
-gather_info_builder.add_node("write_section", write_section)
+gather_info = StateGraph(GatherInformationSubgraphState)
+gather_info.add_node("generate_question", generate_question)
+gather_info.add_node("generate_web_search_query", generate_web_search_query)
+gather_info.add_node("search_web", search_web)
+gather_info.add_node("generate_answer", generate_answer)
+gather_info.add_node("next_concern", next_concern)
+gather_info.add_node("consolidate_answers", consolidate_answers)
+gather_info.add_node("write_section", write_section)
+gather_info.add_edge(START, "generate_question")
+gather_info.add_edge("generate_question", "generate_web_search_query")
+gather_info.add_edge("generate_web_search_query", "search_web")
+gather_info.add_edge("search_web", "generate_answer")
+gather_info.add_edge("generate_answer", "next_concern")
+gather_info.add_edge("consolidate_answers", "write_section")
+gather_info.add_edge("write_section", END)
 
-# Flow
-gather_info_builder.add_edge(START, "generate_question")
-gather_info_builder.add_edge("generate_question", "generate_web_search_query")
-gather_info_builder.add_edge("generate_web_search_query", "search_web")
-gather_info_builder.add_edge("generate_web_search_query", "search_wikipedia")
-gather_info_builder.add_edge("search_web", "generate_answer")
-gather_info_builder.add_edge("search_wikipedia", "generate_answer")
-
-gather_info_builder.add_edge("generate_answer", "next_concern")
-# gather_info_builder.add_conditional_edges("generate_answer", next_concern, ["generate_question", "consolidate_answers"])
-
-gather_info_builder.add_edge("consolidate_answers", "write_section")
-gather_info_builder.add_edge("write_section", END)
-
-# %%
 # Create graph
 builder = StateGraph(ResearchGraphState)
 builder.add_node("create_personas", create_personas)
 builder.add_node("get_human_feedback", get_human_feedback)
-builder.add_node("gather_information", gather_info_builder.compile())
-# builder.add_node("write_report",write_report)
-# builder.add_node("write_introduction",write_introduction)
-# builder.add_node("write_conclusion",write_conclusion)
-# builder.add_node("finalize_report",finalize_report)
+builder.add_node("gather_information", gather_info.compile())
+builder.add_node("combine_sections_into_report_body",combine_sections_into_report_body)
+builder.add_node("write_introduction",write_introduction)
+builder.add_node("write_conclusion",write_conclusion)
+builder.add_node("combine_header_body_and_conclusion",combine_header_body_and_conclusion)
 
 # Create personas and seek feedback from user until approved
 # Then move to information gathering
@@ -450,33 +384,11 @@ builder.add_conditional_edges(
 )
 
 # After gathering information, write the report
-# builder.add_edge("gather_information", "write_report")
-# builder.add_edge("gather_information", "write_introduction")
-# builder.add_edge("gather_information", "write_conclusion")
-# builder.add_edge(["write_conclusion", "write_report", "write_introduction"], "finalize_report")
-# builder.add_edge("finalize_report", END)
+builder.add_edge("gather_information", "combine_sections_into_report_body")
+builder.add_edge("combine_sections_into_report_body", "write_introduction")
+builder.add_edge("combine_sections_into_report_body", "write_conclusion")
+builder.add_edge(["write_conclusion", "write_introduction"], "combine_header_body_and_conclusion")
+builder.add_edge("combine_header_body_and_conclusion", END)
 
-builder.add_edge("gather_information", END)
-
-# Compile
 graph = builder.compile(interrupt_before=["get_human_feedback"])
-
-# %%
 graph
-
-# %%
-# Test the graph
-# state = {
-#     "topic": "Snowflake data lakehouse capabilities",
-#     "human_feedback": "make sure a data scientist is included",
-#     "personas": [],
-#     "sections": [],
-#     "introduction": "",
-#     "content": "",
-#     "conclusion": "",
-#     "final_report": ""
-# }
-
-# graph.invoke(state)
-
-# %%
