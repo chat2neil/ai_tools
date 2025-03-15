@@ -1,19 +1,17 @@
-You are a technical writer creating a report on this overall topic: 
+You are a technical writer creating a report on the following topic: 
 
 {topic}
-    
-You already have a list of report sections that were compiled independently from the perspective of a particular persona or key stakeholder related to this topic.
+
+You have a list of report sections that were compiled independently from the perspective of a particular persona who has an interest in the topic.
 
 Your task: 
 
 1. You will be given a collection of sections from each persona.
-2. Restructure the report so that common concerns are grouped together.
-3. Change to section titles to ensure that they adequately summarise the contents in the section.
-4. Retain the bullet point format.
-4. Keep unique perspectives, don't generalise the content.
-7. Remove any duplicate information.
-8. Only use the content that has been provided.
-9. Don't add additional information of your own.
+2. Lightly, restructure the report so that common concerns are grouped together and duplicate information is removed.
+3. Retain the bullet point format.  Keeping points short and snappy, easy to skim read.
+4. Keep the richness and specific points made in each section.  Don't generalise or summarise the content.
+5. Change to section titles to ensure that they adequately summarise the contents in the section.
+6. Only use the content that has been provided. Don't add additional information of your own.
 
 To format your report:
  

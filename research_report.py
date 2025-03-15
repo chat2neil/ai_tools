@@ -1,4 +1,4 @@
-from research_assistant import builder
+from research_assistant import overall_graph
 from dotenv import load_dotenv
 from utils.report_name import generate_report_name
 
@@ -11,7 +11,7 @@ file_name = generate_report_name(path, topic)
 print(f"Generated file name: {file_name}")
 
 print("Compiling graph...")
-graph = builder.compile()
+graph = overall_graph.compile()
 
 print("Generating research report...")
 results = graph.invoke({"topic": topic, "human_feedback": "approve"}, {"recursion_limit": 50})

@@ -2,6 +2,7 @@ import operator
 from pydantic import BaseModel, Field
 from typing import Annotated, List, Literal
 from typing_extensions import TypedDict
+import re
 
 from langchain_core.messages import (
     HumanMessage,
@@ -22,6 +23,7 @@ MAX_PERSONAS = 3
 MAX_CONCERNS = 5
 MAX_SEARCH_RESULTS = 5
 MAX_WORDS_PER_SECTION = 800
+HUMAN_ACCEPTED = r"approve|accept|yes|ok|proceed|continue"
 
 ### LLM
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -49,7 +51,7 @@ class TopicPerspectives(BaseModel):
 ## States
 class GeneratePersonasState(TypedDict):
     topic: str  # Research topic
-    human_feedback: str  # Human feedback
+    persona_feedback: str  # Human feedback
     personas: List[Persona]  # Personas to consider for this topic
 
 
@@ -77,7 +79,7 @@ class OverallGraphState(TypedDict):
     """
 
     topic: str  # Research topic
-    human_feedback: str  # Human feedback
+    persona_feedback: str  # Human feedback
     personas: List[Persona]  # List of personas asking questions
 
     # Sections returned from the information gathering graph
@@ -97,13 +99,13 @@ def create_personas(state: GeneratePersonasState):
     """Create personas who are would primarily be interested in the topic"""
 
     topic = state["topic"]
-    human_feedback = state.get("human_feedback", "")
+    persona_feedback = state.get("persona_feedback", "")
 
     create_personas_prompt = PromptTemplate.from_file(
         "./research_assistant/prompts/create_personas.txt"
     )
     system_message = create_personas_prompt.format(
-        topic=topic, human_feedback=human_feedback
+        topic=topic, persona_feedback=persona_feedback
     )
 
     personas = llm.with_structured_output(TopicPerspectives).invoke(
@@ -114,7 +116,7 @@ def create_personas(state: GeneratePersonasState):
     return {"personas": personas.personas}
 
 
-def get_human_feedback(state: GeneratePersonasState):
+def get_persona_feedback(state: GeneratePersonasState):
     """No-op node that should be interrupted on"""
     pass
 
@@ -124,9 +126,9 @@ def start_gathering_information(state: OverallGraphState):
     via Send() API or return to create_personas"""
 
     # Check if human feedback
-    human_feedback = state.get("human_feedback", "approve")
+    persona_feedback = state.get("persona_feedback", "approve")
 
-    if human_feedback.lower() != "approve":
+    if not re.match(HUMAN_ACCEPTED, persona_feedback.lower()):
         # Return to create_personas
         return "create_personas"
 
@@ -379,27 +381,27 @@ gather_info.add_edge("consolidate_answers", "write_section")
 gather_info.add_edge("write_section", END)
 
 # Overall graph
-builder = StateGraph(OverallGraphState)
-builder.add_node(create_personas)
-builder.add_node(get_human_feedback)
-builder.add_node("gather_information", gather_info.compile())
-builder.add_node(combine_sections)
-builder.add_node(write_introduction)
-builder.add_node(write_conclusion)
-builder.add_node(complete_report)
+overall_graph = StateGraph(OverallGraphState)
+overall_graph.add_node(create_personas)
+overall_graph.add_node(get_persona_feedback)
+overall_graph.add_node("gather_information", gather_info.compile())
+overall_graph.add_node(combine_sections)
+overall_graph.add_node(write_introduction)
+overall_graph.add_node(write_conclusion)
+overall_graph.add_node(complete_report)
 
-builder.add_edge(START, "create_personas")
-builder.add_edge("create_personas", "get_human_feedback")
-builder.add_conditional_edges(
-    "get_human_feedback",
+overall_graph.add_edge(START, "create_personas")
+overall_graph.add_edge("create_personas", "get_persona_feedback")
+overall_graph.add_conditional_edges(
+    "get_persona_feedback",
     start_gathering_information,
     ["create_personas", "gather_information"],
 )
-builder.add_edge("gather_information", "combine_sections")
-builder.add_edge("combine_sections", "write_introduction")
-builder.add_edge("combine_sections", "write_conclusion")
-builder.add_edge(["write_conclusion", "write_introduction"], "complete_report")
-builder.add_edge("complete_report", END)
+overall_graph.add_edge("gather_information", "combine_sections")
+overall_graph.add_edge("combine_sections", "write_introduction")
+overall_graph.add_edge("combine_sections", "write_conclusion")
+overall_graph.add_edge(["write_conclusion", "write_introduction"], "complete_report")
+overall_graph.add_edge("complete_report", END)
 
-graph = builder.compile(interrupt_before=["get_human_feedback"])
+graph = overall_graph.compile(interrupt_before=["get_persona_feedback"])
 graph

@@ -7,7 +7,7 @@ Follow these instructions carefully:
 
 2. Then, examine any editorial feedback that has been optionally provided to guide creation of the personas:
 
-{human_feedback}
+{persona_feedback}
 
 3. Select the most popular themes and perspectives for this topic, keeping the editorial feedback in mind.
 
