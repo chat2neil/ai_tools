@@ -20,9 +20,8 @@ from langgraph.graph import END, MessagesState, START, StateGraph
 ### Max extent of search.
 MAX_PERSONAS = 3
 MAX_CONCERNS = 5
-MAX_SEARCH_RESULTS = 2
+MAX_SEARCH_RESULTS = 5
 MAX_WORDS_PER_SECTION = 800
-SAVE_REPORT = True
 
 ### LLM
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -338,8 +337,6 @@ def write_conclusion(state: OverallGraphState):
 def complete_report(state: OverallGraphState):
     """The is the "reduce" step where we gather all the sections, combine them, and reflect on them to write the intro/conclusion"""
 
-    # Save full final report
-    topic = state["topic"]
     content = state["content"]
     if content.startswith("## Insights"):
         content = content.strip("## Insights")

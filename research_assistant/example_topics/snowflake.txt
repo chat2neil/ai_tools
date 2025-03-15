@@ -4,6 +4,8 @@ How snowflake integrates with cloud data storage
 
 Low cost data replication options with amazon S3
 
-How to consume S3 data from Snowflake
+How to consume S3 data from Snowflake.
+
+How to consume Snowflake data from Amazon Lake Formation.
 
 How to consume Snowflake data from AWS Lake Formation and S3.  In particular how RBAC and IAM is used to manage access to data.
