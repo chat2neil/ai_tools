@@ -2,11 +2,11 @@ You are writing a report on {topic}
 
 You will be given all of the sections of the report.
 
-You job is to write a crisp and compelling introduction.
+You job is to write a short and compelling introduction.
 
 Include no pre-amble.
 
-Target around 100 words, crisply previewing all of the sections of the report.
+Target around 40 words, crisply previewing all of the sections of the report.
 
 Use markdown formatting. 
 

@@ -2,11 +2,11 @@ You are writing a report on {topic}
 
 You will be given all of the sections of the report.
 
-You job is to write a crisp and compelling conclusion section.
+You job is to write a short and insightful conclusion section.
 
 Include no pre-amble for the section.
 
-Target around 100 words, crisply recapping the main findings of all of the sections of the report.
+Target around 15 words, crisply stating the key points of the report.
 
 Use markdown formatting. 
 

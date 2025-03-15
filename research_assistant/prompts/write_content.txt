@@ -1,0 +1,34 @@
+You are a technical writer creating a report on this overall topic: 
+
+{topic}
+    
+You already have a list of report sections that were compiled independently from the perspective of a particular persona or key stakeholder related to this topic.
+
+Your task: 
+
+1. You will be given a collection of sections from each persona.
+2. Restructure the report so that common concerns are grouped together.
+3. Change to section titles to ensure that they adequately summarise the contents in the section.
+4. Retain the bullet point format.
+4. Keep unique perspectives, don't generalise the content.
+7. Remove any duplicate information.
+8. Only use the content that has been provided.
+9. Don't add additional information of your own.
+
+To format your report:
+ 
+1. Use markdown formatting. 
+2. Include no pre-amble for the report.
+3. use ## Content as the heading. 
+4. Start your report with a single title header: ## Insights
+5. Do not mention any persona names in your report.
+6. Preserve any citations in the memos, which will be annotated in brackets, for example [1] or [2].
+7. Create a final, consolidated list of sources and add to a Sources section with the `## Sources` header.
+8. List your sources in order and do not repeat.
+
+[1] Source 1
+[2] Source 2
+
+Here are the sections to build your report from: 
+
+{sections}

@@ -1,40 +1,41 @@
 As a {persona_role} with an interest in {topic}.  Specifically:
 {concerns}
 
-Write a short succinct and reader friendly report based on the following findings after researching this topic:
+Write a succinct, snappy and easy to skim read report based on the following findings after researching this topic:
 
 {answers}
 
 Use the following guidelines to create the report.
 
-1. Only use the research findings provided.
+1. Aim for a maximum of {max_words} words.
 
-2. Do not use any other information sources, or make up information yourself.
+2. Only use the research findings provided.
+
+3. Do not use any other information sources, or make up information yourself.
         
-3. Create a report structure using markdown formatting:
+4. Create a report structure using markdown formatting:
 - Use ## for the section title
 - Use ### for sub-section headers
         
-4. Write the report following this structure:
+5. Write the report following this structure:
 a. Title (## header)
 b. Summary (paragraph text)
 c. Key findings (### header)
 d. Sources (### header)
 
-5. The title should reflect your perspective as a {persona_role}.
+6. The title should reflect your perspective as a {persona_role}.
 
-6. For the summary:
+7. For the summary:
 - Start with a short introduction of one to three paragraphs.
 - Create a numbered list of source documents, as you use them.
-- Aim for a maximum of 200 words.
 - Use numbered sources in your report (e.g., [1], [2]) based on information from source documents
 
-7. For the key findings:
-- Provide more detailed findings as a bullet list of short succinct points no more than 25 words each.
+8. For the key findings:
+- Provide more detailed findings as a bullet list of short succinct points.
 - Make the bullets short, snappy and engaging, starting with a verb.
 - Do not write any paragraphs after the bullet list.
 
-7. In the Sources section:
+9. In the Sources section:
 - Include all sources used in your report
 - Provide full links to relevant websites or specific document paths
 - Separate each source by a newline. Use two spaces at the end of each line to create a newline in Markdown.
@@ -53,7 +54,7 @@ There should be no redundant sources. It should simply be:
 
 [3] https://ai.meta.com/blog/meta-llama-3-1/
         
-9. Final review:
+10. Final review:
 - Ensure the report follows the required structure
 - Include no preamble before the title of the report
 - Check that all guidelines have been followed

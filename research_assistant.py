@@ -18,10 +18,10 @@ from langgraph.types import Command, Send
 from langgraph.graph import END, MessagesState, START, StateGraph
 
 ### Max extent of search.
-MAX_PERSONAS = 1
-MAX_CONCERNS = 1
+MAX_PERSONAS = 3
+MAX_CONCERNS = 5
 MAX_SEARCH_RESULTS = 2
-MAX_WORDS_PER_SECTION = 500
+MAX_WORDS_PER_SECTION = 800
 SAVE_REPORT = True
 
 ### LLM
@@ -271,7 +271,11 @@ def write_section(state: InfoGatherSubState):
         "./research_assistant/prompts/write_section.txt"
     )
     system_message = section_writer_instructions.format(
-        persona_role=persona.role, topic=topic, concerns=concerns, answers=all_answers
+        persona_role=persona.role, 
+        topic=topic, 
+        concerns=concerns, 
+        answers=all_answers,
+        max_words=MAX_WORDS_PER_SECTION
     )
     section = llm.invoke([SystemMessage(content=system_message)])
 
@@ -289,7 +293,7 @@ def combine_sections(state: OverallGraphState):
     formatted_str_sections = "\n\n".join([f"{section}" for section in sections])
 
     combine_sections_instructions = PromptTemplate.from_file(
-        "./research_assistant/prompts/combine_sections_instructions.txt"
+        "./research_assistant/prompts/write_content.txt"
     )
     system_message = combine_sections_instructions.format(topic=topic, sections=formatted_str_sections)    
     report = llm.invoke([SystemMessage(content=system_message)]+[HumanMessage(content=f"Write a report based upon these memos.")]) 
@@ -349,19 +353,12 @@ def complete_report(state: OverallGraphState):
 
     final_report = (
         state["introduction"]
-        + "\n\n---\n\n"
         + content
-        + "\n\n---\n\n"
+        + "\n\n"
         + state["conclusion"]
     )
     if sources is not None:
         final_report += "\n\n## Sources\n" + sources
-
-    # if SAVE_REPORT:
-    #     # report_file_name = f"/Users/neil/src/ai_tools/reports/{topic.replace(' ', '_').lower()}.md"
-    #     # print(report_file_name)
-    #     with open("/Users/neil/src/ai_tools/reports/blah.md", "w") as f:
-    #         f.write(final_report)
 
     return {"final_report": final_report}
 
