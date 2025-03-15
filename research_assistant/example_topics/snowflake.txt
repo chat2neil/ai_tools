@@ -1,11 +1,5 @@
-Snowflake data lakehouse capabilities
+How to consume Amazon S3 data from Snowflake tables, including how to manage data access security.  Use AWS architect, security architect and data engineer roles as personas.
 
-How snowflake integrates with cloud data storage
+How to consume Amazon Lake Formation data from Snowflake tables, including how to manage data access security.  Use AWS architect, security architect and data engineer roles as personas.
 
-Low cost data replication options with amazon S3
-
-How to consume S3 data from Snowflake.
-
-How to consume Snowflake data from Amazon Lake Formation.
-
-How to consume Snowflake data from AWS Lake Formation and S3.  In particular how RBAC and IAM is used to manage access to data.
+How to consume Snowflake data from Amazon Lake Formation, including how to manage data access security.  Use AWS architect, security architect and data engineer roles as personas.
