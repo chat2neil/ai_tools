@@ -3,3 +3,7 @@ Snowflake data lakehouse capabilities
 How snowflake integrates with cloud data storage
 
 Low cost data replication options with amazon S3
+
+How to consume S3 data from Snowflake
+
+How to consume Snowflake data from AWS Lakeformation
