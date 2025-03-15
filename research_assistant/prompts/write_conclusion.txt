@@ -12,4 +12,4 @@ Use markdown formatting.
 
 For your conclusion, use ## Conclusion as the section header.
 
-Here are the sections to reflect on for writing: {formatted_str_sections}
+Here are the sections to reflect on for writing: {content}

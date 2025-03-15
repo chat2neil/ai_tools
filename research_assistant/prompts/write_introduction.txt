@@ -14,4 +14,4 @@ For your introduction, create a compelling title and use the # header for the ti
 
 For your introduction, use ## Introduction as the section header. 
 
-Here are the sections to reflect on for writing: {formatted_str_sections}
+Here are the sections to reflect on for writing: {content}

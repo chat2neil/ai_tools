@@ -18,14 +18,16 @@ from langgraph.types import Command, Send
 from langgraph.graph import END, MessagesState, START, StateGraph
 
 ### Max extent of search.
-MAX_PERSONAS = 3
-MAX_CONCERNS = 3
-MAX_SEARCH_RESULTS = 5
+MAX_PERSONAS = 1
+MAX_CONCERNS = 1
+MAX_SEARCH_RESULTS = 2
+MAX_WORDS_PER_SECTION = 500
+SAVE_REPORT = True
 
 ### LLM
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
-### Schema
+### Structured Output
 class Persona(BaseModel):
     role: str = Field(
         description="Role of the persona in the context of the topic.",
@@ -45,21 +47,24 @@ class TopicPerspectives(BaseModel):
         description=f"List of {MAX_PERSONAS} personas who are primary stakeholders for the topic.",
     )
 
-
+## States
 class GeneratePersonasState(TypedDict):
     topic: str  # Research topic
     human_feedback: str  # Human feedback
     personas: List[Persona]  # Personas to consider for this topic
 
 
-class GatherInformationSubgraphState(MessagesState):
+class InfoGatherSubState(MessagesState):
     """
     This interim state is where the detailed questions are crafted and
     the information is gathered by searching the web.
     """
 
-    persona: Persona  # The persona with an interest
-    topic: str  # The topic being researched
+    # The topic, with differnt field name so that 
+    # it doesn't clash with the topic in the parent state
+    research_topic: str
+    persona_of_interest: Persona
+    
     concern_index: int  # Pointer to current concern in loop
     concern: str  # The current concern we are researching
     search_results: Annotated[list, operator.add]  # List of web pages found
@@ -67,11 +72,7 @@ class GatherInformationSubgraphState(MessagesState):
     sections: list  # Final key we duplicate in outer state for Send() API
 
 
-class SearchQuery(BaseModel):
-    search_query: str = Field(None, description="Web search query.")
-
-
-class ResearchGraphState(TypedDict):
+class OverallGraphState(TypedDict):
     """
     This is the state for the overall research graph.
     """
@@ -79,11 +80,16 @@ class ResearchGraphState(TypedDict):
     topic: str  # Research topic
     human_feedback: str  # Human feedback
     personas: List[Persona]  # List of personas asking questions
-    sections: Annotated[list, operator.add]  # Send() API key
-    introduction: str  # Introduction for the final report
-    content: str  # Content for the final report
-    conclusion: str  # Conclusion for the final report
-    final_report: str  # Final report
+
+    # Sections returned from the information gathering graph
+    # via Send() API
+    sections: Annotated[list, operator.add]
+    
+    # Final report fields, done sequentially
+    introduction: str
+    content: str
+    conclusion: str
+    final_report: str
 
 
 ### Creating personas, with human feedback
@@ -114,7 +120,7 @@ def get_human_feedback(state: GeneratePersonasState):
     pass
 
 
-def start_gathering_information(state: ResearchGraphState):
+def start_gathering_information(state: OverallGraphState):
     """Conditional edge to initiate a series of parallel information gathering processes
     via Send() API or return to create_personas"""
 
@@ -133,8 +139,8 @@ def start_gathering_information(state: ResearchGraphState):
             Send(
                 "gather_information",
                 {
-                    "persona": persona,
-                    "topic": topic,
+                    "research_topic": topic,
+                    "persona_of_interest": persona,
                     "concern": persona.concerns[0],
                     "concern_index": 0,
                 },
@@ -145,11 +151,11 @@ def start_gathering_information(state: ResearchGraphState):
 
 ### Gather information from the perspective of each persona
 
-def generate_question(state: GatherInformationSubgraphState):
+def generate_question(state: InfoGatherSubState):
     """Generate a question to gather information about a particular persona and one of their concerns"""
 
-    topic = state["topic"]
-    persona_role = state["persona"].role
+    topic = state["research_topic"]
+    persona_role = state["persona_of_interest"].role
     concern = state["concern"]
 
     question_instructions = PromptTemplate.from_file(
@@ -166,11 +172,11 @@ def generate_question(state: GatherInformationSubgraphState):
     return {"messages": [question]}
 
 
-def generate_web_search_query(state: GatherInformationSubgraphState):
+def generate_web_search_query(state: InfoGatherSubState):
     """Generate web search criteria from a question"""
 
     question = state["messages"][-1].content
-    topic = state["topic"]
+    topic = state["research_topic"]
 
     search_instructions = PromptTemplate.from_file(
         "./research_assistant/prompts/web_search_query.txt"
@@ -181,7 +187,7 @@ def generate_web_search_query(state: GatherInformationSubgraphState):
     return {"messages": [query]}
 
 
-def search_web(state: GatherInformationSubgraphState):
+def search_web(state: InfoGatherSubState):
     """Search the web using Tavily search service"""
 
     query = state["messages"][-1].content
@@ -198,12 +204,12 @@ def search_web(state: GatherInformationSubgraphState):
     return {"search_results": [formatted_search_docs]}
 
 
-def generate_answer(state: GatherInformationSubgraphState):
+def generate_answer(state: InfoGatherSubState):
     """Use the question and search results to generate an answer"""
 
-    persona_role = state["persona"].role
+    topic = state["research_topic"]
+    persona_role = state["persona_of_interest"].role
     question = [q for q in state["messages"] if q.name == "question"][-1].content
-    topic = state["topic"]
     search_results = state["search_results"]
 
     answer_instructions = PromptTemplate.from_file(
@@ -222,11 +228,11 @@ def generate_answer(state: GatherInformationSubgraphState):
 
 
 def next_concern(
-    state: GatherInformationSubgraphState,
+    state: InfoGatherSubState,
 ) -> Command[Literal["generate_question", "consolidate_answers"]]:
     """Select the persona's next concern to gather information for"""
 
-    persona = state["persona"]
+    persona = state["persona_of_interest"]
     concern_index = state["concern_index"]
 
     concern_index += 1
@@ -244,7 +250,7 @@ def next_concern(
         return Command(goto="consolidate_answers")
 
 
-def consolidate_answers(state: GatherInformationSubgraphState):
+def consolidate_answers(state: InfoGatherSubState):
     """Combine all answers into a single information string"""
 
     answers = [ans for ans in state["messages"] if ans.name == "answer"]
@@ -252,12 +258,12 @@ def consolidate_answers(state: GatherInformationSubgraphState):
     return {"all_answers": all_answers}
 
 
-def write_section(state: GatherInformationSubgraphState):
+def write_section(state: InfoGatherSubState):
     """Write a section of the report that summarises the gathered information for a persona"""
 
-    persona = state["persona"]
+    topic = state["research_topic"]
+    persona = state["persona_of_interest"]
     concerns = "\n- ".join(persona.concerns)
-    topic = state["topic"]
     all_answers = state["all_answers"]
 
     # Write section using either the gathered source docs from information (context) or the information itself (information)
@@ -275,17 +281,23 @@ def write_section(state: GatherInformationSubgraphState):
 
 ### Write final report
 
-def combine_sections_into_report_body(state: ResearchGraphState):
+def combine_sections(state: OverallGraphState):
     """Consolidate the sections into a final report body"""
     
+    topic = state["topic"]
     sections = state["sections"]
     formatted_str_sections = "\n\n".join([f"{section}" for section in sections])
 
-    return { "content": formatted_str_sections }
+    combine_sections_instructions = PromptTemplate.from_file(
+        "./research_assistant/prompts/combine_sections_instructions.txt"
+    )
+    system_message = combine_sections_instructions.format(topic=topic, sections=formatted_str_sections)    
+    report = llm.invoke([SystemMessage(content=system_message)]+[HumanMessage(content=f"Write a report based upon these memos.")]) 
+    return {"content": report.content}
 
 
 # Write the introduction or conclusion
-def write_introduction(state: ResearchGraphState):
+def write_introduction(state: OverallGraphState):
     """Write the introduction"""
 
     topic = state["topic"]
@@ -302,7 +314,7 @@ def write_introduction(state: ResearchGraphState):
     return {"introduction": intro.content}
 
 
-def write_conclusion(state: ResearchGraphState):
+def write_conclusion(state: OverallGraphState):
     """Write the conclusion"""
 
     topic = state["topic"]
@@ -319,10 +331,11 @@ def write_conclusion(state: ResearchGraphState):
     return {"conclusion": conclusion.content}
 
 
-def combine_header_body_and_conclusion(state: ResearchGraphState):
+def complete_report(state: OverallGraphState):
     """The is the "reduce" step where we gather all the sections, combine them, and reflect on them to write the intro/conclusion"""
 
     # Save full final report
+    topic = state["topic"]
     content = state["content"]
     if content.startswith("## Insights"):
         content = content.strip("## Insights")
@@ -343,18 +356,26 @@ def combine_header_body_and_conclusion(state: ResearchGraphState):
     )
     if sources is not None:
         final_report += "\n\n## Sources\n" + sources
+
+    # if SAVE_REPORT:
+    #     # report_file_name = f"/Users/neil/src/ai_tools/reports/{topic.replace(' ', '_').lower()}.md"
+    #     # print(report_file_name)
+    #     with open("/Users/neil/src/ai_tools/reports/blah.md", "w") as f:
+    #         f.write(final_report)
+
     return {"final_report": final_report}
 
 
-# Research information gathering stage
-gather_info = StateGraph(GatherInformationSubgraphState)
-gather_info.add_node("generate_question", generate_question)
-gather_info.add_node("generate_web_search_query", generate_web_search_query)
-gather_info.add_node("search_web", search_web)
-gather_info.add_node("generate_answer", generate_answer)
-gather_info.add_node("next_concern", next_concern)
-gather_info.add_node("consolidate_answers", consolidate_answers)
-gather_info.add_node("write_section", write_section)
+# Info grathering subgraph
+gather_info = StateGraph(InfoGatherSubState)
+gather_info.add_node(generate_question)
+gather_info.add_node(generate_web_search_query)
+gather_info.add_node(search_web)
+gather_info.add_node(generate_answer)
+gather_info.add_node(next_concern)
+gather_info.add_node(consolidate_answers)
+gather_info.add_node(write_section)
+
 gather_info.add_edge(START, "generate_question")
 gather_info.add_edge("generate_question", "generate_web_search_query")
 gather_info.add_edge("generate_web_search_query", "search_web")
@@ -363,18 +384,16 @@ gather_info.add_edge("generate_answer", "next_concern")
 gather_info.add_edge("consolidate_answers", "write_section")
 gather_info.add_edge("write_section", END)
 
-# Create graph
-builder = StateGraph(ResearchGraphState)
-builder.add_node("create_personas", create_personas)
-builder.add_node("get_human_feedback", get_human_feedback)
+# Overall graph
+builder = StateGraph(OverallGraphState)
+builder.add_node(create_personas)
+builder.add_node(get_human_feedback)
 builder.add_node("gather_information", gather_info.compile())
-builder.add_node("combine_sections_into_report_body",combine_sections_into_report_body)
-builder.add_node("write_introduction",write_introduction)
-builder.add_node("write_conclusion",write_conclusion)
-builder.add_node("combine_header_body_and_conclusion",combine_header_body_and_conclusion)
+builder.add_node(combine_sections)
+builder.add_node(write_introduction)
+builder.add_node(write_conclusion)
+builder.add_node(complete_report)
 
-# Create personas and seek feedback from user until approved
-# Then move to information gathering
 builder.add_edge(START, "create_personas")
 builder.add_edge("create_personas", "get_human_feedback")
 builder.add_conditional_edges(
@@ -382,13 +401,11 @@ builder.add_conditional_edges(
     start_gathering_information,
     ["create_personas", "gather_information"],
 )
-
-# After gathering information, write the report
-builder.add_edge("gather_information", "combine_sections_into_report_body")
-builder.add_edge("combine_sections_into_report_body", "write_introduction")
-builder.add_edge("combine_sections_into_report_body", "write_conclusion")
-builder.add_edge(["write_conclusion", "write_introduction"], "combine_header_body_and_conclusion")
-builder.add_edge("combine_header_body_and_conclusion", END)
+builder.add_edge("gather_information", "combine_sections")
+builder.add_edge("combine_sections", "write_introduction")
+builder.add_edge("combine_sections", "write_conclusion")
+builder.add_edge(["write_conclusion", "write_introduction"], "complete_report")
+builder.add_edge("complete_report", END)
 
 graph = builder.compile(interrupt_before=["get_human_feedback"])
 graph
